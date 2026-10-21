@@ -8,7 +8,7 @@ const sampleAlerts = [
   { title: "Earthquake activity watch", place: "Seismic zone", level: "MODERATE" },
   { title: "Flood risk assessment", place: "River basin", level: "CRITICAL" },
 ];
-const API_URL = "http://127.0.0.1:5000";
+const API_URL = "https://ai-geospatial-risk-api-v2.onrender.com";
 
 function App() {
   const [activeTab, setActiveTab] = useState("Overview");
