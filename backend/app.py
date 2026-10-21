@@ -106,8 +106,8 @@ def add_sample_alerts():
             )
 
 
-add_sample_alerts()
 init_db()
+add_sample_alerts()
 
 def add_coordinates():
     with sqlite3.connect(DB_PATH) as conn:
