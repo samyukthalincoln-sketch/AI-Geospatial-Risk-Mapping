@@ -289,14 +289,14 @@ def live_warnings():
             "data": response.json()
         })
 
-    except (requests.RequestException, ValueError):
-        return jsonify({
-            "source": "India Meteorological Department",
-            "status": "error",
-            "message": "Live official warnings are temporarily unavailable."
-        }), 502
-
-
+    except (requests.RequestException, ValueError) as e:
+    return jsonify({
+        "source": "India Meteorological Department",
+        "status": "error",
+        "message": "Live official warnings are temporarily unavailable.",
+        "debug_error": str(e)
+    }), 502
+    
 @app.route("/api/live-weather")
 def live_weather():
     try:
