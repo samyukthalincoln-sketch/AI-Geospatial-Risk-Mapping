@@ -212,27 +212,16 @@ def incidents():
         if not safe_name:
             return jsonify({"error": "Invalid photo filename."}), 400
 
-        filename = f"{uuid.uuid4().hex}_{safe_name}"
-        photo.save(str(UPLOAD_FOLDER / filename))
-        photo_path = f"/uploads/{filename}"
+        result = cloudinary.uploader.upload(
+            photo,
+            folder="geoguard_incidents",
+            resource_type="image"
+        )
+        photo_path = result["secure_url"]
 
     created_at = datetime.now(timezone.utc).isoformat()
 
-   
     with get_db() as conn:
-        incident = conn.execute("""
-            INSERT INTO incidents
-            (hazard, location, severity, description,
-             latitude, longitude, status, created_at, photo_path)
-            VALUES (%s, %s, %s, %s, %s, %s, 'Pending', %s, %s)
-            RETURNING *
-        """, (
-            hazard, location, severity, description,
-            latitude, longitude, created_at, photo_path
-        )).fetchone()
-
-
-        
         incident = conn.execute("""
             INSERT INTO incidents
             (hazard, location, severity, description,
@@ -248,7 +237,6 @@ def incidents():
         "message": "Incident report submitted successfully.",
         "incident": dict(incident)
     }), 201
-
 
 @app.route("/uploads/<path:filename>")
 def uploaded_file(filename):
