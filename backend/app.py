@@ -9,9 +9,17 @@ from pathlib import Path
 from datetime import datetime, timezone
 import uuid
 from werkzeug.utils import secure_filename
+import cloudinary
+import cloudinary.uploader
 
 app = Flask(__name__)
 CORS(app)
+cloudinary.config(
+    cloud_name=os.environ.get("CLOUDINARY_CLOUD_NAME"),
+    api_key=os.environ.get("CLOUDINARY_API_KEY"),
+    api_secret=os.environ.get("CLOUDINARY_API_SECRET"),
+    secure=True,
+)
 
 DB_PATH = Path(__file__).parent / "disaster_risk.db"
 UPLOAD_FOLDER = Path(__file__).parent / "uploads"
