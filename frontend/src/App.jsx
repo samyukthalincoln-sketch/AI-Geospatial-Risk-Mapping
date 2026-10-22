@@ -787,13 +787,19 @@ const renderIncidents
               <p>
                 {incident.description || "No description provided."}
               </p>
-              {incident.photo_path && (
+              
+{incident.photo_path && (
   <img
-    src={`${API_URL}${incident.photo_path}`}
+    src={
+      incident.photo_path.startsWith("http")
+        ? incident.photo_path
+        : `${API_URL}${incident.photo_path}`
+    }
     alt="Incident report"
     className="incident-photo"
   />
 )}
+
 
               <div className="incident-meta">
                 <span
