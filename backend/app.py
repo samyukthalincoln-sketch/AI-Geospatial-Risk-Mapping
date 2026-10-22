@@ -274,6 +274,7 @@ def update_incident(incident_id):
     })
 
 
+
 @app.route("/api/live-warnings")
 def live_warnings():
     try:
@@ -289,14 +290,14 @@ def live_warnings():
             "data": response.json()
         })
 
-   
-except (requests.RequestException, ValueError) as e:
-    print("IMD WARNING API ERROR:", repr(e), flush=True)
-    return jsonify({
-        "source": "India Meteorological Department",
-        "status": "error",
-        "message": "Live official warnings are temporarily unavailable."
-    }), 502
+    except (requests.RequestException, ValueError) as e:
+        print("IMD WARNING API ERROR:", repr(e), flush=True)
+        return jsonify({
+            "source": "India Meteorological Department",
+            "status": "error",
+            "message": "Live official warnings are temporarily unavailable."
+        }), 502
+
 
 @app.route("/api/live-weather")
 def live_weather():
