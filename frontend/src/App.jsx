@@ -311,7 +311,7 @@ function App() {
 
       if (results[3].status === "fulfilled") {
         const data = results[3].value;
-        const items = toArray(data);
+        const items = toArray(data.data ?? data.alerts ?? data);
 
         setWarnings(items);
 
