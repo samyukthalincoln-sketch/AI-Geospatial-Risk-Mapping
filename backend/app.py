@@ -90,25 +90,28 @@ def init_db():
 
 
 
+
 def add_sample_alerts():
     with get_db() as conn:
         count = conn.execute(
-    "SELECT COUNT(*) AS count FROM alerts"
-).fetchone()["count"]
+            "SELECT COUNT(*) AS count FROM alerts"
+        ).fetchone()["count"]
 
         if count == 0:
-            conn.executemany("""
-                INSERT INTO alerts
-                (location, hazard, risk_level, risk_score, latitude, longitude)
-                VALUES (%s, %s, %s, %s, %s, %s)
-            """, [
-                ("Vijayawada River Basin", "Flood Risk", "CRITICAL", 92,
-                 16.5062, 80.6480),
-                ("Visakhapatnam Region", "Earthquake Activity", "MODERATE", 45,
-                 17.6868, 83.2185),
-                ("Guntur Region", "Heavy Rainfall Monitoring", "HIGH", 78,
-                 16.3067, 80.4365),
-            ])
+            with conn.cursor() as cur:
+                cur.executemany("""
+                    INSERT INTO alerts
+                    (location, hazard, risk_level, risk_score, latitude, longitude)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                """, [
+                    ("Vijayawada River Basin", "Flood Risk", "CRITICAL", 92,
+                     16.5062, 80.6480),
+                    ("Visakhapatnam Region", "Earthquake Activity", "MODERATE", 45,
+                     17.6868, 83.2185),
+                    ("Guntur Region", "Heavy Rainfall Monitoring", "HIGH", 78,
+                     16.3067, 80.4365),
+                ])
+
 
 
 @app.route("/")
