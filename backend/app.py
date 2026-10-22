@@ -1,15 +1,27 @@
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
-import sqlite3
+import os
+import psycopg
+from psycopg.rows import dict_row
 import requests
 from pathlib import Path
 from datetime import datetime, timezone
+import uuid
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 CORS(app)
 
 DB_PATH = Path(__file__).parent / "disaster_risk.db"
+UPLOAD_FOLDER = Path(__file__).parent / "uploads"
+UPLOAD_FOLDER.mkdir(parents=True, exist_ok=True)
+
+ALLOWED_IMAGE_EXTENSIONS = {
+    ".jpg", ".jpeg", ".png", ".webp"
+}
+
+app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024
 
 VALID_HAZARDS = {
     "Flood", "Fire", "Earthquake",
@@ -20,63 +32,75 @@ VALID_SEVERITIES = {"LOW", "MODERATE", "HIGH", "CRITICAL"}
 VALID_STATUSES = {"Pending", "Verified", "Resolved"}
 
 
+import os
+import psycopg
+from psycopg.rows import dict_row
+
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+    return psycopg.connect(
+        os.environ["DATABASE_URL"],
+        row_factory=dict_row
+    )
+
 
 
 def init_db():
     with get_db() as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS alerts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id BIGSERIAL PRIMARY KEY,
                 location TEXT NOT NULL,
                 hazard TEXT NOT NULL,
                 risk_level TEXT NOT NULL,
                 risk_score INTEGER NOT NULL,
-                latitude REAL,
-                longitude REAL
+                latitude DOUBLE PRECISION,
+                longitude DOUBLE PRECISION
             )
         """)
 
         conn.execute("""
             CREATE TABLE IF NOT EXISTS incidents (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id BIGSERIAL PRIMARY KEY,
                 hazard TEXT NOT NULL,
                 location TEXT NOT NULL,
                 severity TEXT NOT NULL,
                 description TEXT NOT NULL,
-                latitude REAL,
-                longitude REAL,
+                latitude DOUBLE PRECISION,
+                longitude DOUBLE PRECISION,
                 status TEXT NOT NULL DEFAULT 'Pending',
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                photo_path TEXT
             )
         """)
 
-        columns = [
-            row["name"]
-            for row in conn.execute("PRAGMA table_info(alerts)")
-        ]
+        conn.execute("""
+            ALTER TABLE alerts
+            ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION
+        """)
 
-        if "latitude" not in columns:
-            conn.execute("ALTER TABLE alerts ADD COLUMN latitude REAL")
+        conn.execute("""
+            ALTER TABLE alerts
+            ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION
+        """)
 
-        if "longitude" not in columns:
-            conn.execute("ALTER TABLE alerts ADD COLUMN longitude REAL")
+        conn.execute("""
+            ALTER TABLE incidents
+            ADD COLUMN IF NOT EXISTS photo_path TEXT
+        """)
+
 
 
 def add_sample_alerts():
     with get_db() as conn:
         count = conn.execute(
-            "SELECT COUNT(*) FROM alerts"
-        ).fetchone()[0]
+    "SELECT COUNT(*) AS count FROM alerts"
+).fetchone()["count"]
 
         if count == 0:
             conn.executemany("""
                 INSERT INTO alerts
                 (location, hazard, risk_level, risk_score, latitude, longitude)
-                VALUES (?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s)
             """, [
                 ("Vijayawada River Basin", "Flood Risk", "CRITICAL", 92,
                  16.5062, 80.6480),
@@ -112,6 +136,7 @@ def alerts():
     return jsonify([dict(row) for row in rows])
 
 
+
 @app.route("/api/incidents", methods=["GET", "POST"])
 def incidents():
     if request.method == "GET":
@@ -122,7 +147,11 @@ def incidents():
 
         return jsonify([dict(row) for row in rows])
 
-    data = request.get_json(silent=True) or {}
+    # Accept both normal JSON and photo-upload forms.
+    if request.content_type and "multipart/form-data" in request.content_type:
+        data = request.form
+    else:
+        data = request.get_json(silent=True) or {}
 
     hazard = str(data.get("hazard", "")).strip()
     location = str(data.get("location", "")).strip()
@@ -145,8 +174,8 @@ def incidents():
             "error": "Location or description is too long."
         }), 400
 
-    latitude = data.get("latitude")
-    longitude = data.get("longitude")
+    latitude = data.get("latitude") or None
+    longitude = data.get("longitude") or None
 
     try:
         if latitude is not None:
@@ -161,23 +190,56 @@ def incidents():
     except (ValueError, TypeError):
         return jsonify({"error": "Invalid coordinates."}), 400
 
+    photo = request.files.get("photo")
+    photo_path = None
+
+    if photo and photo.filename:
+        extension = Path(photo.filename).suffix.lower()
+
+        if extension not in ALLOWED_IMAGE_EXTENSIONS:
+            return jsonify({
+                "error": "Please upload a JPG, PNG or WEBP image."
+            }), 400
+
+        if not photo.mimetype or not photo.mimetype.startswith("image/"):
+            return jsonify({"error": "The uploaded file must be an image."}), 400
+
+        safe_name = secure_filename(photo.filename)
+
+        if not safe_name:
+            return jsonify({"error": "Invalid photo filename."}), 400
+
+        filename = f"{uuid.uuid4().hex}_{safe_name}"
+        photo.save(str(UPLOAD_FOLDER / filename))
+        photo_path = f"/uploads/{filename}"
+
     created_at = datetime.now(timezone.utc).isoformat()
 
+   
     with get_db() as conn:
-        cursor = conn.execute("""
+        incident = conn.execute("""
             INSERT INTO incidents
             (hazard, location, severity, description,
-             latitude, longitude, status, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, 'Pending', ?)
+             latitude, longitude, status, created_at, photo_path)
+            VALUES (%s, %s, %s, %s, %s, %s, 'Pending', %s, %s)
+            RETURNING *
         """, (
             hazard, location, severity, description,
-            latitude, longitude, created_at
-        ))
+            latitude, longitude, created_at, photo_path
+        )).fetchone()
 
-        incident = conn.execute(
-            "SELECT * FROM incidents WHERE id = ?",
-            (cursor.lastrowid,)
-        ).fetchone()
+
+        
+        incident = conn.execute("""
+            INSERT INTO incidents
+            (hazard, location, severity, description,
+             latitude, longitude, status, created_at, photo_path)
+            VALUES (%s, %s, %s, %s, %s, %s, 'Pending', %s, %s)
+            RETURNING *
+        """, (
+            hazard, location, severity, description,
+            latitude, longitude, created_at, photo_path
+        )).fetchone()
 
     return jsonify({
         "message": "Incident report submitted successfully.",
@@ -185,6 +247,9 @@ def incidents():
     }), 201
 
 
+@app.route("/uploads/<path:filename>")
+def uploaded_file(filename):
+    return send_from_directory(str(UPLOAD_FOLDER), filename)
 @app.route("/api/incidents/<int:incident_id>", methods=["PATCH"])
 def update_incident(incident_id):
     data = request.get_json(silent=True) or {}
@@ -197,7 +262,7 @@ def update_incident(incident_id):
 
     with get_db() as conn:
         existing = conn.execute(
-            "SELECT id FROM incidents WHERE id = ?",
+            "SELECT id FROM incidents WHERE id = %s",
             (incident_id,)
         ).fetchone()
 
@@ -205,12 +270,12 @@ def update_incident(incident_id):
             return jsonify({"error": "Incident not found."}), 404
 
         conn.execute(
-            "UPDATE incidents SET status = ? WHERE id = ?",
+            "UPDATE incidents SET status = %s WHERE id = %s",
             (status, incident_id)
         )
 
         updated = conn.execute(
-            "SELECT * FROM incidents WHERE id = ?",
+            "SELECT * FROM incidents WHERE id = %s",
             (incident_id,)
         ).fetchone()
 

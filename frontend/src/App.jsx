@@ -1,9 +1,11 @@
 
 import { useState, useEffect, useCallback } from "react";
+
 import {
   MapContainer,
   TileLayer,
   CircleMarker,
+  Rectangle,
   Popup,
 } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
@@ -162,8 +164,8 @@ function HazardMap({ alerts, incidents, large = false }) {
 
       <MapContainer
         key={large ? "large-hazard-map" : "overview-hazard-map"}
-        center={[16.5, 80.6]}
-        zoom={6}
+        center={[16.3045, 80.4163]}
+        zoom={12}
         scrollWheelZoom
         className={
           large ? "hazard-map hazard-map-large" : "hazard-map"
@@ -188,14 +190,20 @@ function HazardMap({ alerts, incidents, large = false }) {
             <CircleMarker
               key={item.id}
               center={item.position}
-              radius={item.type === "Incident" ? 8 : 10}
-              pathOptions={{
-                className: `hazard-pulse hazard-${level}`,
-                color: severityColor(item.severity),
-                fillColor: severityColor(item.severity),
-                fillOpacity: 0.8,
-                weight: 2,
-              }}
+              radius={item.type === "Incident" ? 12 : 10}
+              
+pathOptions={{
+  className: `hazard-pulse hazard-${level}`,
+  color: severityColor(item.severity),
+  fillColor: severityColor(item.severity),
+  fillOpacity: 0.8,
+  opacity: 1,
+  weight: 2,
+}}
+
+              
+
+
             >
               <Popup>
                 <strong>{item.name}</strong>
@@ -249,6 +257,7 @@ function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
+  const [incidentPhoto, setIncidentPhoto] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -360,84 +369,98 @@ function App() {
     }));
   };
 
-  const submitIncident = async (event) => {
-    event.preventDefault();
-    setNotice("");
-    setError("");
+  
+const submitIncident = async (event) => {
+  event.preventDefault();
+  setNotice("");
+  setError("");
 
-    if (!form.location.trim() || !form.description.trim()) {
-      setError(
-        "Please enter both the location and incident description."
-      );
-      return;
-    }
+  if (!form.location.trim() || !form.description.trim()) {
+    setError(
+      "Please enter both the location and incident description."
+    );
+    return;
+  }
 
-    const hasLat = form.latitude.trim() !== "";
-    const hasLng = form.longitude.trim() !== "";
+  const hasLat = form.latitude.trim() !== "";
+  const hasLng = form.longitude.trim() !== "";
 
-    if (hasLat !== hasLng) {
-      setError("Enter both coordinates or leave both blank.");
-      return;
-    }
+  if (hasLat !== hasLng) {
+    setError("Enter both coordinates or leave both blank.");
+    return;
+  }
 
-    const payload = {
-      hazard: form.hazard,
-      location: form.location.trim(),
-      severity: form.severity,
-      description: form.description.trim(),
-      latitude: null,
-      longitude: null,
-    };
-
-    if (hasLat && hasLng) {
-      const latitude = Number(form.latitude);
-      const longitude = Number(form.longitude);
-
-      if (
-        !Number.isFinite(latitude) ||
-        !Number.isFinite(longitude) ||
-        latitude < -90 ||
-        latitude > 90 ||
-        longitude < -180 ||
-        longitude > 180
-      ) {
-        setError("Please enter valid latitude and longitude.");
-        return;
-      }
-
-      payload.latitude = latitude;
-      payload.longitude = longitude;
-    }
-
-    setSubmitting(true);
-
-    try {
-      const data = await apiRequest(`${API_URL}/api/incidents`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      const id = data.incident?.id ?? data.id;
-
-      setNotice(
-        id != null
-          ? `Incident report #${id} submitted successfully.`
-          : "Incident report submitted successfully."
-      );
-
-      setForm(EMPTY_FORM);
-      await refreshData();
-
-      setActiveTab("Incident Reports");
-    } catch (err) {
-      setError(
-        `${err.message}. Check the backend and incident API.`
-      );
-    } finally {
-      setSubmitting(false);
-    }
+  const payload = {
+    hazard: form.hazard,
+    location: form.location.trim(),
+    severity: form.severity,
+    description: form.description.trim(),
+    latitude: "",
+    longitude: "",
   };
+
+  if (hasLat && hasLng) {
+    const latitude = Number(form.latitude);
+    const longitude = Number(form.longitude);
+
+    if (
+      !Number.isFinite(latitude) ||
+      !Number.isFinite(longitude) ||
+      latitude < -90 ||
+      latitude > 90 ||
+      longitude < -180 ||
+      longitude > 180
+    ) {
+      setError("Please enter valid latitude and longitude.");
+      return;
+    }
+
+    payload.latitude = String(latitude);
+    payload.longitude = String(longitude);
+  }
+
+  const formData = new FormData();
+
+  Object.entries(payload).forEach(([key, value]) => {
+    formData.append(key, value);
+  });
+
+  if (incidentPhoto) {
+    formData.append("photo", incidentPhoto);
+  }
+
+  setSubmitting(true);
+
+  try {
+    const data = await apiRequest(`${API_URL}/api/incidents`, {
+      method: "POST",
+      body: formData,
+    });
+
+    const id = data.incident?.id ?? data.id;
+
+    setNotice(
+      id != null
+        ? `Incident report #${id} submitted successfully.`
+        : "Incident report submitted successfully."
+    );
+
+    setForm(EMPTY_FORM);
+    setIncidentPhoto(null);
+
+    await refreshData();
+    setActiveTab("Incident Reports");
+  } catch (err) {
+    setError(
+      `${err.message}. Check the backend and incident API.`
+    );
+  } finally {
+    setSubmitting(false);
+  }
+};
+
+
+    
 
   const updateStatus = async (incident, status) => {
     setNotice("");
@@ -583,7 +606,7 @@ function App() {
           </select>
         </label>
 
-        <label>
+         <label>
           Incident description *
           <textarea
             name="description"
@@ -596,7 +619,55 @@ function App() {
           />
         </label>
 
-        <p className="form-subheading">Map coordinates (optional)</p>
+        <label>
+          Incident photo (optional)
+          <input
+            type="file"
+            accept="image/*"
+            capture="environment"
+            onChange={(event) =>
+              setIncidentPhoto(event.target.files?.[0] || null)
+            }
+          />
+        </label>
+
+        {incidentPhoto && (
+          <p className="form-hint">
+            Selected photo: {incidentPhoto.name}
+          </p>
+        )}
+
+        <button
+          type="button"
+          className="primary-button"
+          onClick={() => {
+            if (!navigator.geolocation) {
+              setError("GPS is not supported by this browser.");
+              return;
+            }
+
+            navigator.geolocation.getCurrentPosition(
+              (position) => {
+                setForm((previous) => ({
+                  ...previous,
+                  latitude: String(position.coords.latitude),
+                  longitude: String(position.coords.longitude),
+                }));
+                setError("");
+                setNotice("GPS location captured successfully.");
+              },
+              () => {
+                setError("Please allow location access and try again.");
+              }
+            );
+          }}
+        >
+          📍 Use My Current Location
+        </button>
+
+        <p className="form-subheading">
+          Map coordinates (optional)
+        </p>
 
         <div className="coordinate-grid">
           <label>
@@ -645,7 +716,7 @@ function App() {
     </section>
   );
 
-  const renderIncidents = () => (
+   const renderIncidents = () => (
     <section className="panel">
       <div className="panel-heading">
         <div>
@@ -685,7 +756,7 @@ function App() {
           <option>Resolved</option>
         </select>
       </div>
-
+const renderIncidents
       {filteredIncidents.length === 0 ? (
         <div className="empty-state">
           <span className="empty-icon">⌖</span>
@@ -716,6 +787,13 @@ function App() {
               <p>
                 {incident.description || "No description provided."}
               </p>
+              {incident.photo_path && (
+  <img
+    src={`${API_URL}${incident.photo_path}`}
+    alt="Incident report"
+    className="incident-photo"
+  />
+)}
 
               <div className="incident-meta">
                 <span
@@ -1411,13 +1489,16 @@ function App() {
         .setting-row select { width: auto; max-width: 160px; }
         .footer { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px; padding-top: 24px; color: #60728a; font-size: 9px; }
 
-        /* Hazard marker animation */
-        .hazard-pulse {
-          transform-box: fill-box;
-          transform-origin: center;
-          animation: hazardPulse 2s ease-in-out infinite;
-          filter: drop-shadow(0 0 4px var(--marker-glow, #59baff));
-        }
+        
+/* Hazard marker animation */
+.hazard-pulse {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: hazardPulse 1.5s ease-in-out infinite;
+  transition: none;
+}
+
+        
         .hazard-critical { --marker-glow: #ff4d5e; }
         .hazard-high { --marker-glow: #ff8747; }
         .hazard-moderate, .hazard-medium { --marker-glow: #f4c45e; }
